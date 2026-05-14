@@ -1,3 +1,180 @@
+# Kubernetes Autoscaling Setup Guide (HPA + Cluster Autoscaler on Amazon EKS)
+
+## Overview
+
+This guide explains how to configure **Horizontal Pod Autoscaler (HPA)** and **Cluster Autoscaler** in Kubernetes.
+
+Autoscaling happens at two levels:
+
+- **Pod Level Scaling (HPA)** → Automatically adds/removes application pods based on CPU usage.
+- **Node Level Scaling (Cluster Autoscaler)** → Automatically adds/removes worker nodes when the cluster needs more capacity.
+
+---
+
+# 1. Horizontal Pod Autoscaler (HPA)
+
+## What is HPA?
+
+**Horizontal Pod Autoscaler (HPA)** automatically increases or decreases the number of pods in your application based on load.
+
+**Horizontal** means scaling by **adding/removing pods**, not by increasing pod size.
+
+---
+
+## Example
+
+Your application normally runs with **1 pod**.
+
+### When traffic increases:
+
+```text
+1 pod → 2 pods → 4 pods → 8 pods
+```
+
+### When traffic decreases:
+
+```text
+8 pods → 4 pods → 2 pods → 1 pod
+```
+
+---
+
+## How HPA Works
+
+```text
+User traffic increases
+        ↓
+Pods use more CPU
+        ↓
+Metrics Server reports CPU
+        ↓
+HPA detects threshold exceeded
+        ↓
+HPA updates Deployment replicas
+        ↓
+New pods are created
+```
+
+---
+
+## HPA Architecture
+
+```text
+Users
+  ↓
+LoadBalancer / Service
+  ↓
+Pods (Deployment)
+  ↑
+HPA watches CPU
+  ↑
+Metrics Server collects pod metrics
+```
+
+---
+
+# Steps to Deploy HPA (Metrics Server Setup)
+
+## Step 1: Install Metrics Server
+
+Metrics Server collects CPU and memory usage from pods and nodes.
+
+Run:
+
+```bash
+kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+```
+
+---
+
+## Step 2: Edit Metrics Server Deployment
+
+This step is important for many Kubernetes clusters such as:
+
+- Amazon EKS
+- kubeadm clusters
+- Self-managed Kubernetes clusters
+
+Run:
+
+```bash
+kubectl edit deployment metrics-server -n kube-system
+```
+
+Find the container args section and add these two lines:
+
+```yaml
+- --kubelet-insecure-tls
+- --kubelet-preferred-address-types=InternalIP
+```
+
+Final configuration should look like:
+
+```yaml
+spec:
+  containers:
+  - args:
+    - --cert-dir=/tmp
+    - --secure-port=10250
+    - --kubelet-insecure-tls
+    - --kubelet-preferred-address-types=InternalIP
+```
+
+Save and exit.
+
+---
+
+## Step 3: Wait for Metrics Server to Become Ready
+
+Check the pod status:
+
+```bash
+kubectl get pods -n kube-system
+```
+
+Expected output:
+
+```text
+metrics-server-xxxx   1/1   Running
+```
+
+---
+
+## Step 4: Test Metrics Collection
+
+Verify node metrics:
+
+```bash
+kubectl top nodes
+```
+
+Verify pod metrics:
+
+```bash
+kubectl top pods
+```
+
+If metrics appear, Metrics Server is working correctly.
+
+---
+
+## Step 5: Verify HPA
+
+Check Horizontal Pod Autoscaler status:
+
+```bash
+kubectl get hpa
+```
+
+Example output:
+
+```text
+NAME      REFERENCE           TARGETS   MINPODS   MAXPODS   REPLICAS
+my-hpa    Deployment/myapp    45%/50%   1         10        2
+```
+
+---
+
 # 🚀 Cluster Autoscaler Setup on Amazon EKS
 
 This guide walks you through installing and configuring the **Cluster Autoscaler** on an Amazon EKS cluster using the AWS cloud provider.
